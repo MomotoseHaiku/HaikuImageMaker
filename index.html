@@ -191,74 +191,170 @@ $('reset').addEventListener('click',()=>{
   $('author').value=''; $('authorSize').value=13; $('authorFont').selectedIndex=0;
   dateInput.value=new Date().toISOString().slice(0,10); update();
 });
-function copyComputedStyles(source, target) {
-  const computed = getComputedStyle(source);
-  let css = '';
-  for (const prop of computed) css += `${prop}:${computed.getPropertyValue(prop)};`;
-  target.setAttribute('style', css);
-  for (let i = 0; i < source.children.length; i++) {
-    copyComputedStyles(source.children[i], target.children[i]);
-  }
+/* ===== JPEG保存: Canvasに直接描画する方式 =====
+   旧方式(SVG foreignObject→Canvas)はSafari/iOSなどでCanvasが汚染(tainted)されて
+   toBlobが失敗したり、白紙になったりするため、縦書きを自前で描画します。 */
+const NO_START = new Set(Array.from('、。，．）」』】〉》］｝〕！？・'));
+const NO_END   = new Set(Array.from('（「『【〈《［｛〔'));
+const ROTATE   = new Set(Array.from('ー―—–〜～…‥（）「」『』【】〈〉《》［］｛｝〔〕＝：；－'));
+const PUNCT    = new Set(Array.from('、。，．'));
+const SMALL    = new Set(Array.from('ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ'));
+const SIDEWAYS = /^[\u0020-\u007E\u00A0-\u02FF]$/;
+
+function styleOf(el){
+  const cs = getComputedStyle(el);
+  const ls = parseFloat(cs.letterSpacing);
+  return { family: cs.fontFamily, color: cs.color, size: parseFloat(cs.fontSize), ls: isNaN(ls) ? 0 : ls };
 }
+function setFont(ctx, st){
+  ctx.font = `${st.size}px ${st.family}`;
+  ctx.fillStyle = st.color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+}
+function colLen(col){ return col.reduce((s,c)=>s+c.adv, 0); }
+
+// 文字列を縦書きの列(右→左)に分割する。maxLen は1列の最大長さ(px)
+function buildColumns(ctx, text, st, maxLen){
+  const cols = [];
+  text.split('\n').forEach(par=>{
+    const chars = Array.from(par).map(ch=>{
+      const sideways = SIDEWAYS.test(ch);
+      const w = sideways ? ctx.measureText(ch).width : st.size;
+      return { ch, sideways, w, adv: w + st.ls };
+    });
+    if(!chars.length){ cols.push([]); return; }
+    let i = 0;
+    while(i < chars.length){
+      let len = 0, j = i;
+      while(j < chars.length && (j === i || len + chars[j].adv <= maxLen + 0.01)){ len += chars[j].adv; j++; }
+      if(j < chars.length){
+        while(j > i+1 && (NO_START.has(chars[j].ch) || NO_END.has(chars[j-1].ch))) j--;
+      }
+      cols.push(chars.slice(i, j));
+      i = j;
+    }
+  });
+  return cols;
+}
+
+function drawColumns(ctx, cols, st, rightEdge, topY, lineH){
+  setFont(ctx, st);
+  cols.forEach((col,k)=>{
+    const cx = rightEdge - lineH*k - lineH/2;
+    let y = topY;
+    col.forEach(c=>{
+      ctx.save();
+      if(c.sideways || ROTATE.has(c.ch)){
+        ctx.translate(cx, y + c.w/2);
+        ctx.rotate(Math.PI/2);
+        ctx.fillText(c.ch, 0, 0);
+      }else{
+        let dx = 0, dy = 0;
+        if(PUNCT.has(c.ch)){ dx = st.size*.45; dy = -st.size*.55; }
+        else if(SMALL.has(c.ch)){ dx = st.size*.1; dy = -st.size*.1; }
+        ctx.fillText(c.ch, cx+dx, y + st.size/2 + dy);
+      }
+      ctx.restore();
+      y += c.adv;
+    });
+  });
+}
+
+function renderToCanvas(W, H, S){
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(W*S);
+  canvas.height = Math.round(H*S);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(S, S);
+  ctx.fillStyle = bg.value;
+  ctx.fillRect(0, 0, W, H);
+
+  // 本文(中央)
+  {
+    const st = styleOf(poem);
+    setFont(ctx, st);
+    const maxH = H*.82, maxW = W*.8, lineH = st.size*1.7;
+    const cols = buildColumns(ctx, poem.textContent, st, maxH);
+    const total = cols.reduce((s,c)=>s+colLen(c), 0);
+    const boxH = Math.min(total, maxH);
+    const boxW = Math.min(cols.length*lineH, maxW);
+    drawColumns(ctx, cols, st, (W+boxW)/2, (H-boxH)/2, lineH);
+  }
+
+  // フリースペース(右上)
+  if(!freeSpace.hidden){
+    const st = styleOf(freeSpace);
+    setFont(ctx, st);
+    const mH = H*.42, mW = W*.28, lineH = st.size*1.65;
+    const cols = buildColumns(ctx, freeSpace.textContent, st, mH);
+    const wide = buildColumns(ctx, freeSpace.textContent, st, 1e9);
+    const boxH = Math.min(Math.max(0, ...wide.map(colLen)), mH);
+    const boxW = Math.min(cols.length*lineH, mW);
+    const right = W*.92, top = H*.07;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(right-boxW, top, boxW, boxH); ctx.clip();
+    drawColumns(ctx, cols, st, right, top, lineH);
+    ctx.restore();
+  }
+
+  // 作者名(左下)
+  if(!byline.hidden){
+    const st = styleOf(byline);
+    setFont(ctx, st);
+    const m = ctx.measureText('あ');
+    const lineH = (m.fontBoundingBoxAscent != null) ? (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) : st.size*1.45;
+    const cols = buildColumns(ctx, byline.textContent, st, H*.93);
+    const total = cols.reduce((s,c)=>s+colLen(c), 0);
+    const boxH = Math.min(total, H*.93);
+    const left = W*.08;
+    drawColumns(ctx, cols, st, left + cols.length*lineH, H*.93 - boxH, lineH);
+  }
+
+  // 日付(右下・横書き)
+  if(!date.hidden){
+    const st = styleOf(date);
+    ctx.font = `${st.size}px ${st.family}`;
+    ctx.fillStyle = st.color;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const m = ctx.measureText('0');
+    const descent = (m.fontBoundingBoxDescent != null) ? m.fontBoundingBoxDescent : st.size*.25;
+    const chars = Array.from(date.textContent);
+    const total = chars.reduce((s,ch)=>s+ctx.measureText(ch).width+st.ls, 0);
+    let x = W*.92 - total;
+    const y = H*.93 - descent;
+    chars.forEach(ch=>{ ctx.fillText(ch, x, y); x += ctx.measureText(ch).width + st.ls; });
+  }
+  return canvas;
+}
+
 $('download').addEventListener('click', async()=>{
-  const target = $('paper');
-  const rect = target.getBoundingClientRect();
+  const rect = paper.getBoundingClientRect();
   if (!rect.width || !rect.height) {
     alert('プレビューを表示してから保存してください。');
     return;
   }
   try {
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    const clone = target.cloneNode(true);
-    copyComputedStyles(target, clone);
-    clone.style.width = `${rect.width}px`;
-    clone.style.height = `${rect.height}px`;
-    clone.style.minHeight = '0';
-    clone.style.maxWidth = 'none';
-    clone.style.boxShadow = 'none';
-    clone.style.margin = '0';
-    clone.style.position = 'relative';
-
-    const wrapper = document.createElement('div');
-    wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-    wrapper.appendChild(clone);
-    const markup = new XMLSerializer().serializeToString(wrapper);
-    const scale = 3;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(rect.width*scale)}" height="${Math.round(rect.height*scale)}" viewBox="0 0 ${rect.width} ${rect.height}"><foreignObject width="100%" height="100%">${markup}</foreignObject></svg>`;
-    const blob = new Blob([svg], {type:'image/svg+xml;charset=utf-8'});
-    const objectUrl = URL.createObjectURL(blob);
-    const image = new Image();
-    image.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(rect.width*scale);
-      canvas.height = Math.round(rect.height*scale);
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = bg.value;
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.drawImage(image,0,0,canvas.width,canvas.height);
-      URL.revokeObjectURL(objectUrl);
-      canvas.toBlob(jpegBlob=>{
-        if(!jpegBlob){alert('JPEG画像を作成できませんでした。');return;}
-        const jpegUrl=URL.createObjectURL(jpegBlob);
-        const a=document.createElement('a');
-        a.href=jpegUrl;
-        a.download='haiku.jpg';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(()=>URL.revokeObjectURL(jpegUrl),1500);
-      },'image/jpeg',0.95);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      alert('画像の書き出しに失敗しました。別のブラウザでお試しください。');
-    };
-    image.src=objectUrl;
+    const canvas = renderToCanvas(rect.width, rect.height, 3);
+    canvas.toBlob(jpegBlob=>{
+      if(!jpegBlob){ alert('JPEG画像を作成できませんでした。'); return; }
+      const jpegUrl = URL.createObjectURL(jpegBlob);
+      const a = document.createElement('a');
+      a.href = jpegUrl;
+      a.download = 'haiku.jpg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(jpegUrl), 10000);
+    }, 'image/jpeg', 0.95);
   } catch (error) {
     console.error(error);
     alert('画像の保存に失敗しました。');
   }
 });
+
 update();
 </script>
 </body>
