@@ -41,6 +41,13 @@
   button:focus-visible, input:focus-visible,textarea:focus-visible,select:focus-visible { outline:2px solid #555; outline-offset:2px; }
   .actions { display:flex; gap:9px; flex-wrap:wrap; }
   .actions button { flex:1; }
+  .btnlink { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; border:1px solid #111; background:#fff; color:#111; padding:12px 16px; border-radius:9px; font-size:14px; font-weight:650; min-height:46px; }
+  .actions .btnlink { flex:1; }
+  #saveModal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:100; padding:12px; }
+  #saveModal[hidden] { display:none; }
+  .modal-box { background:#fff; border-radius:14px; padding:14px; max-width:420px; width:100%; max-height:100%; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+  .modal-box img { max-width:100%; max-height:55vh; object-fit:contain; align-self:center; border:1px solid #ddd; -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto; }
+  .modal-title { margin:0; font-size:13px; font-weight:650; }
   @media(max-width:760px) {
     header { padding:18px 14px 10px; }
     h1 { font-size:20px; }
@@ -150,8 +157,20 @@
       <button class="secondary" id="reset" type="button">設定をリセット</button>
     </div>
     <div class="hint">プレビューと同じ形・縦横比・配置でJPEG保存します（高解像度）。</div>
+    <div class="hint" id="ver">保存方式：Canvas直接描画 v2</div>
   </section>
 </main>
+<div id="saveModal" hidden role="dialog" aria-modal="true" aria-label="画像を保存">
+  <div class="modal-box">
+    <p class="modal-title">画像を長押しして「写真に追加」または「画像を保存」を選んでください。</p>
+    <img id="resultImg" alt="作成した俳句画像">
+    <div class="actions">
+      <button id="shareBtn" type="button">共有・保存</button>
+      <a id="dlLink" class="btnlink" download="haiku.jpg" href="#">ダウンロード</a>
+      <button class="secondary" id="closeModal" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
 <script>
 const $ = id => document.getElementById(id);
 const poemInput=$('poemInput'), size=$('size'), bg=$('bg'), font=$('font');
@@ -329,6 +348,28 @@ function renderToCanvas(W, H, S){
   return canvas;
 }
 
+let lastUrl=null, lastBlob=null;
+const isTouchDevice=()=>matchMedia('(pointer:coarse)').matches || /iPhone|iPad|Android/i.test(navigator.userAgent);
+function triggerDownload(url){
+  const a=document.createElement('a');
+  a.href=url; a.download='haiku.jpg';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function closeModal(){ $('saveModal').hidden=true; }
+if(!(navigator.share && navigator.canShare)) $('shareBtn').hidden=true;
+$('closeModal').addEventListener('click',closeModal);
+$('saveModal').addEventListener('click',e=>{ if(e.target===$('saveModal')) closeModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+$('shareBtn').addEventListener('click', async()=>{
+  if(!lastBlob) return;
+  const file=new File([lastBlob],'haiku.jpg',{type:'image/jpeg'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); }
+    catch(e){ if(e.name!=='AbortError') alert('共有できませんでした。画像を長押しして保存してください。'); }
+  }else{
+    alert('この環境では共有に対応していません。画像を長押しして保存してください。');
+  }
+});
 $('download').addEventListener('click', async()=>{
   const rect = paper.getBoundingClientRect();
   if (!rect.width || !rect.height) {
@@ -338,23 +379,26 @@ $('download').addEventListener('click', async()=>{
   try {
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     const canvas = renderToCanvas(rect.width, rect.height, 3);
-    canvas.toBlob(jpegBlob=>{
-      if(!jpegBlob){ alert('JPEG画像を作成できませんでした。'); return; }
-      const jpegUrl = URL.createObjectURL(jpegBlob);
-      const a = document.createElement('a');
-      a.href = jpegUrl;
-      a.download = 'haiku.jpg';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(jpegUrl), 10000);
-    }, 'image/jpeg', 0.95);
+    const blob = await new Promise((resolve,reject)=>{
+      try{ canvas.toBlob(b=> b ? resolve(b) : reject(new Error('toBlob returned null')), 'image/jpeg', 0.95); }
+      catch(e){ reject(e); }
+    });
+    if(lastUrl) URL.revokeObjectURL(lastUrl);
+    lastBlob = blob;
+    lastUrl = URL.createObjectURL(blob);
+    if(isTouchDevice()){
+      // スマホ/アプリ内ブラウザでは a[download] が効かないことがあるため、画像を表示して長押し保存・共有できるようにする
+      $('resultImg').src = lastUrl;
+      $('dlLink').href = lastUrl;
+      $('saveModal').hidden = false;
+    }else{
+      triggerDownload(lastUrl);
+    }
   } catch (error) {
     console.error(error);
-    alert('画像の保存に失敗しました。');
+    alert('画像の保存に失敗しました。\n' + ((error && error.name) ? error.name + ': ' : '') + ((error && error.message) || ''));
   }
 });
-
 update();
 </script>
 </body>
