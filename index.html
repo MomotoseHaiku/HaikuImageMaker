@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f6f6">
+<meta name="description" content="俳句を細長い短冊に縦書きで配置し、JPEG画像として保存できるツールです。">
+<title>俳句画像メーカー</title>
+<style>
+  :root { color-scheme: light; --ink:#111; --line:#dedede; --muted:#666; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f6f6f6; color:var(--ink); font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Kaku Gothic ProN",Meiryo,sans-serif; }
+  header { padding:24px 20px 14px; max-width:1100px; margin:auto; }
+  h1 { font-size:22px; font-weight:650; letter-spacing:.06em; margin:0 0 6px; }
+  header p { color:var(--muted); font-size:13px; margin:0; }
+  main { max-width:1100px; margin:auto; padding:12px 20px 36px; display:grid; grid-template-columns:minmax(260px,340px) 1fr; gap:22px; align-items:start; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px; }
+  .field { margin-bottom:17px; }
+  label { display:block; font-size:13px; font-weight:650; margin-bottom:7px; }
+  textarea,input,select { width:100%; border:1px solid #ccc; border-radius:8px; padding:10px 11px; background:#fff; color:#111; font:inherit; font-size:14px; }
+  textarea { min-height:110px; resize:vertical; line-height:1.7; }
+  input[type="range"] { padding:0; accent-color:#111; }
+  input[type="color"] { height:42px; padding:4px; }
+  .range-row { display:flex; align-items:center; gap:10px; }
+  output { min-width:48px; text-align:right; font-size:13px; color:#555; font-variant-numeric:tabular-nums; }
+  .check { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:400; margin:8px 0; }
+  .check input { width:auto; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .preview-panel { display:flex; flex-direction:column; gap:12px; }
+  .preview-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .preview-top strong { font-size:14px; }
+  .hint { color:#666; font-size:12px; }
+  .paper-wrap { background:#eaeaea; padding:16px; border-radius:12px; display:flex; justify-content:center; overflow:auto; }
+  #paper { width:min(100%,300px); height:min(82vh,820px); min-height:520px; background:#fff; color:#111; position:relative; display:flex; justify-content:center; align-items:center; box-shadow:0 2px 12px #00000012; overflow:hidden; }
+  #poem { writing-mode:vertical-rl; text-orientation:mixed; white-space:pre-wrap; overflow-wrap:anywhere; max-height:82%; max-width:80%; line-height:1.7; letter-spacing:.12em; font-size:34px; font-family:"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif; }
+  #freeSpace { position:absolute; top:7%; right:8%; writing-mode:vertical-rl; white-space:pre-wrap; max-height:42%; max-width:28%; overflow:hidden; line-height:1.65; letter-spacing:.08em; color:#333; }
+  #byline { position:absolute; bottom:7%; left:8%; writing-mode:vertical-rl; font-size:13px; letter-spacing:.12em; color:#333; }
+  #date { position:absolute; bottom:7%; right:8%; font-size:12px; letter-spacing:.08em; color:#555; }
+  button { border:1px solid #111; background:#111; color:white; padding:12px 16px; border-radius:9px; font:inherit; font-size:14px; font-weight:650; cursor:pointer; }
+  button.secondary { background:#fff; color:#111; }
+  button:focus-visible, input:focus-visible,textarea:focus-visible,select:focus-visible { outline:2px solid #555; outline-offset:2px; }
+  .actions { display:flex; gap:9px; flex-wrap:wrap; }
+  .actions button { flex:1; }
+  @media(max-width:760px) {
+    header { padding:18px 14px 10px; }
+    h1 { font-size:20px; }
+    main {
+      grid-template-columns:minmax(0,1fr);
+      gap:14px;
+      padding:10px 12px 28px;
+    }
+    .panel { padding:15px; border-radius:12px; }
+    .preview-panel { min-width:0; }
+    .paper-wrap { padding:10px; border-radius:10px; }
+    #paper {
+      width:min(100%,280px);
+      height:min(70svh,680px);
+      min-height:440px;
+    }
+    textarea,input,select { font-size:16px; }
+    button { min-height:46px; }
+    .actions { flex-direction:column; }
+    .actions button { width:100%; }
+  }
+  @media(max-width:380px) {
+    main { padding-left:9px; padding-right:9px; }
+    .panel { padding:12px; }
+    #paper { width:min(100%,250px); height:min(68svh,620px); min-height:420px; }
+    .two { gap:7px; }
+  }
+  @supports not (height: 1svh) {
+    @media(max-width:760px) { #paper { height:min(70vh,680px); } }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>俳句画像メーカー</h1>
+  <p>細長い短冊に、縦書きの一句を配置してJPEG画像として保存できます。</p>
+</header>
+<main>
+  <section class="panel" aria-label="設定">
+    <div class="field">
+      <label for="poemInput">俳句</label>
+      <textarea id="poemInput" placeholder="ここに俳句を入力&#10;改行しても一行の縦書きに整えます"></textarea>
+      <div class="hint">改行は自動的に取り除いて、一列に表示します。</div>
+    </div>
+    <div class="field">
+      <label for="size">文字サイズ</label>
+      <div class="range-row"><input id="size" type="range" min="18" max="64" value="34"><output id="sizeOut">34 px</output></div>
+    </div>
+    <div class="field">
+      <label for="bg">背景色</label>
+      <div class="two">
+        <input id="bg" type="color" value="#ffffff" aria-label="背景色を選択">
+        <select id="preset" aria-label="背景色プリセット">
+          <option value="#ffffff">白</option>
+          <option value="#fafafa">ほぼ白</option>
+          <option value="#f4f1eb">生成り</option>
+          <option value="#f2f2f2">薄い灰色</option>
+          <option value="#fff8f0">淡い暖色</option>
+          <option value="#eef2f5">淡い青灰</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="font">書体</label>
+      <select id="font">
+        <option value='"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif'>明朝体</option>
+        <option value='"Yu Gothic","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif'>ゴシック体</option>
+        <option value='serif'>標準の明朝系</option>
+        <option value='sans-serif'>標準のゴシック系</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>フリースペース（右上）</label>
+      <label class="check"><input id="showFree" type="checkbox"> フリースペースを表示</label>
+      <textarea id="freeText" rows="3" placeholder="兼題・前書き・メモなど"></textarea>
+      <div class="range-row"><input id="freeSize" type="range" min="10" max="32" value="16"><output id="freeSizeOut">16 px</output></div>
+      <div class="hint">本文と同じ書体で表示します。</div>
+    </div>
+    <div class="field">
+      <label>作者名・日付</label>
+      <label class="check"><input id="showAuthor" type="checkbox"> 作者名を表示（左下）</label>
+      <input id="author" type="text" placeholder="作者名（例：俳号）">
+      <div class="range-row"><input id="authorSize" type="range" min="10" max="32" value="13"><output id="authorSizeOut">13 px</output></div>
+      <label for="authorFont">名前の書体</label>
+      <select id="authorFont">
+        <option value='"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif'>明朝体</option>
+        <option value='"Yu Gothic","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif'>ゴシック体</option>
+        <option value='serif'>標準の明朝系</option>
+        <option value='sans-serif'>標準のゴシック系</option>
+      </select>
+      <label class="check"><input id="showDate" type="checkbox"> 日付を表示</label>
+      <input id="dateInput" type="date">
+    </div>
+    <div class="hint">プレビューに表示されている短冊部分を、そのままJPEG画像で保存します。</div>
+  </section>
+
+  <section class="preview-panel">
+    <div class="preview-top"><strong>プレビュー</strong><span class="hint">右から左へ縦書き</span></div>
+    <div class="paper-wrap"><div id="paper" class="slim">
+      <div id="freeSpace" hidden></div>
+      <div id="poem"></div>
+      <div id="byline" hidden></div>
+      <div id="date" hidden></div>
+    </div></div>
+    <div class="actions">
+      <button id="download">JPEG画像を保存</button>
+      <button class="secondary" id="reset" type="button">設定をリセット</button>
+    </div>
+    <div class="hint">プレビューと同じ形・縦横比・配置でJPEG保存します（高解像度）。</div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const poemInput=$('poemInput'), size=$('size'), bg=$('bg'), font=$('font');
+const poem=$('poem'), paper=$('paper'), byline=$('byline'), date=$('date'), freeSpace=$('freeSpace');
+const dateInput=$('dateInput');
+dateInput.value = new Date().toISOString().slice(0,10);
+function cleanPoem(){ return poemInput.value.replace(/[\r\n]/g,'').trim(); }
+function update(){
+  poem.textContent=cleanPoem() || 'ここに俳句が表示されます';
+  poem.style.fontSize=size.value+'px';
+  poem.style.fontFamily=font.value;
+  paper.style.background=bg.value;
+  paper.classList.add('slim');
+  $('sizeOut').textContent=size.value+' px';
+  freeSpace.hidden=!$('showFree').checked || !$('freeText').value.trim();
+  freeSpace.textContent=$('freeText').value.trim();
+  freeSpace.style.fontSize=$('freeSize').value+'px';
+  freeSpace.style.fontFamily=font.value;
+  $('freeSizeOut').textContent=$('freeSize').value+' px';
+  byline.hidden=!$('showAuthor').checked || !$('author').value.trim();
+  byline.textContent=$('author').value.trim();
+  byline.style.fontSize=$('authorSize').value+'px';
+  byline.style.fontFamily=$('authorFont').value;
+  $('authorSizeOut').textContent=$('authorSize').value+' px';
+  date.hidden=!$('showDate').checked || !dateInput.value;
+  date.textContent=dateInput.value ? dateInput.value.replaceAll('-','.') : '';
+}
+['input','change'].forEach(evt=>{
+  document.querySelectorAll('textarea,input,select').forEach(el=>el.addEventListener(evt,update));
+});
+$('preset').addEventListener('change',()=>{bg.value=$('preset').value;update();});
+bg.addEventListener('input',()=>{$('preset').value=bg.value;});
+$('reset').addEventListener('click',()=>{
+  poemInput.value=''; size.value=34; bg.value='#ffffff'; $('preset').value='#ffffff';
+  font.selectedIndex=0; $('showAuthor').checked=false; $('showDate').checked=false;
+  $('showFree').checked=false; $('freeText').value=''; $('freeSize').value=16;
+  $('author').value=''; $('authorSize').value=13; $('authorFont').selectedIndex=0;
+  dateInput.value=new Date().toISOString().slice(0,10); update();
+});
+function copyComputedStyles(source, target) {
+  const computed = getComputedStyle(source);
+  let css = '';
+  for (const prop of computed) css += `${prop}:${computed.getPropertyValue(prop)};`;
+  target.setAttribute('style', css);
+  for (let i = 0; i < source.children.length; i++) {
+    copyComputedStyles(source.children[i], target.children[i]);
+  }
+}
+$('download').addEventListener('click', async()=>{
+  const target = $('paper');
+  const rect = target.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    alert('プレビューを表示してから保存してください。');
+    return;
+  }
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const clone = target.cloneNode(true);
+    copyComputedStyles(target, clone);
+    clone.style.width = `${rect.width}px`;
+    clone.style.height = `${rect.height}px`;
+    clone.style.minHeight = '0';
+    clone.style.maxWidth = 'none';
+    clone.style.boxShadow = 'none';
+    clone.style.margin = '0';
+    clone.style.position = 'relative';
+
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    wrapper.appendChild(clone);
+    const markup = new XMLSerializer().serializeToString(wrapper);
+    const scale = 3;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(rect.width*scale)}" height="${Math.round(rect.height*scale)}" viewBox="0 0 ${rect.width} ${rect.height}"><foreignObject width="100%" height="100%">${markup}</foreignObject></svg>`;
+    const blob = new Blob([svg], {type:'image/svg+xml;charset=utf-8'});
+    const objectUrl = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(rect.width*scale);
+      canvas.height = Math.round(rect.height*scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = bg.value;
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(image,0,0,canvas.width,canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      canvas.toBlob(jpegBlob=>{
+        if(!jpegBlob){alert('JPEG画像を作成できませんでした。');return;}
+        const jpegUrl=URL.createObjectURL(jpegBlob);
+        const a=document.createElement('a');
+        a.href=jpegUrl;
+        a.download='haiku.jpg';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(()=>URL.revokeObjectURL(jpegUrl),1500);
+      },'image/jpeg',0.95);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      alert('画像の書き出しに失敗しました。別のブラウザでお試しください。');
+    };
+    image.src=objectUrl;
+  } catch (error) {
+    console.error(error);
+    alert('画像の保存に失敗しました。');
+  }
+});
+update();
+</script>
+</body>
+</html>
