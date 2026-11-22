@@ -6,6 +6,9 @@
 <meta name="theme-color" content="#f6f6f6">
 <meta name="description" content="俳句を細長い短冊に縦書きで配置し、JPEG画像として保存できるツールです。">
 <title>俳句画像メーカー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400&family=Noto+Serif+JP:wght@400&display=swap">
 <style>
   :root { color-scheme: light; --ink:#111; --line:#dedede; --muted:#666; }
   * { box-sizing: border-box; }
@@ -32,7 +35,7 @@
   .hint { color:#666; font-size:12px; }
   .paper-wrap { background:#eaeaea; padding:16px; border-radius:12px; display:flex; justify-content:center; overflow:auto; }
   #paper { width:min(100%,300px); height:min(82vh,820px); min-height:520px; background:#fff; color:#111; position:relative; display:flex; justify-content:center; align-items:center; box-shadow:0 2px 12px #00000012; overflow:hidden; }
-  #poem { writing-mode:vertical-rl; text-orientation:mixed; white-space:pre-wrap; overflow-wrap:anywhere; max-height:82%; max-width:80%; line-height:1.7; letter-spacing:.12em; font-size:34px; font-family:"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif; }
+  #poem { writing-mode:vertical-rl; text-orientation:mixed; white-space:pre-wrap; overflow-wrap:anywhere; max-height:82%; max-width:80%; line-height:1.7; letter-spacing:.12em; font-size:34px; font-family:"Noto Serif JP","Yu Mincho","Hiragino Mincho ProN",serif; }
   #freeSpace { position:absolute; top:7%; right:8%; writing-mode:vertical-rl; white-space:pre-wrap; max-height:42%; max-width:28%; overflow:hidden; line-height:1.65; letter-spacing:.08em; color:#333; }
   #byline { position:absolute; bottom:7%; left:8%; writing-mode:vertical-rl; font-size:13px; letter-spacing:.12em; color:#333; }
   #date { position:absolute; bottom:7%; right:8%; font-size:12px; letter-spacing:.08em; color:#555; }
@@ -113,8 +116,8 @@
     <div class="field">
       <label for="font">書体</label>
       <select id="font">
-        <option value='"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif'>明朝体</option>
-        <option value='"Yu Gothic","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif'>ゴシック体</option>
+        <option value='"Noto Serif JP","Yu Mincho","Hiragino Mincho ProN",serif'>明朝体</option>
+        <option value='"Noto Sans JP","Yu Gothic","Hiragino Kaku Gothic ProN",sans-serif'>ゴシック体</option>
         <option value='serif'>標準の明朝系</option>
         <option value='sans-serif'>標準のゴシック系</option>
       </select>
@@ -133,8 +136,8 @@
       <div class="range-row"><input id="authorSize" type="range" min="10" max="32" value="13"><output id="authorSizeOut">13 px</output></div>
       <label for="authorFont">名前の書体</label>
       <select id="authorFont">
-        <option value='"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif'>明朝体</option>
-        <option value='"Yu Gothic","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif'>ゴシック体</option>
+        <option value='"Noto Serif JP","Yu Mincho","Hiragino Mincho ProN",serif'>明朝体</option>
+        <option value='"Noto Sans JP","Yu Gothic","Hiragino Kaku Gothic ProN",sans-serif'>ゴシック体</option>
         <option value='serif'>標準の明朝系</option>
         <option value='sans-serif'>標準のゴシック系</option>
       </select>
@@ -157,7 +160,7 @@
       <button class="secondary" id="reset" type="button">設定をリセット</button>
     </div>
     <div class="hint">プレビューと同じ形・縦横比・配置でJPEG保存します（高解像度）。</div>
-    <div class="hint" id="ver">保存方式：Canvas直接描画 v2</div>
+    <div class="hint" id="ver">保存方式：Canvas直接描画 v3</div>
   </section>
 </main>
 <div id="saveModal" hidden role="dialog" aria-modal="true" aria-label="画像を保存">
@@ -348,6 +351,15 @@ function renderToCanvas(W, H, S){
   return canvas;
 }
 
+async function ensureFonts(){
+  const jobs=[];
+  [poem,freeSpace,byline,date].forEach(el=>{
+    if(el.hidden) return;
+    const cs=getComputedStyle(el);
+    jobs.push(document.fonts.load(`${cs.fontSize} ${cs.fontFamily}`, el.textContent||' ').catch(()=>{}));
+  });
+  await Promise.race([Promise.all(jobs), new Promise(r=>setTimeout(r,4000))]);
+}
 let lastUrl=null, lastBlob=null;
 const isTouchDevice=()=>matchMedia('(pointer:coarse)').matches || /iPhone|iPad|Android/i.test(navigator.userAgent);
 function triggerDownload(url){
@@ -377,6 +389,7 @@ $('download').addEventListener('click', async()=>{
     return;
   }
   try {
+    await ensureFonts();
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     const canvas = renderToCanvas(rect.width, rect.height, 3);
     const blob = await new Promise((resolve,reject)=>{
