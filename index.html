@@ -44,6 +44,10 @@
   button:focus-visible, input:focus-visible,textarea:focus-visible,select:focus-visible { outline:2px solid #555; outline-offset:2px; }
   .actions { display:flex; gap:9px; flex-wrap:wrap; }
   .actions button { flex:1; }
+  #inappNote { max-width:1100px; margin:0 auto 6px; padding:0 20px; }
+  #inappNote .box { background:#fff6e0; border:1px solid #e6c36a; border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.6; }
+  #inappNote button { margin-top:8px; padding:8px 12px; min-height:0; font-size:13px; }
+  #inappNote[hidden] { display:none; }
   .btnlink { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; border:1px solid #111; background:#fff; color:#111; padding:12px 16px; border-radius:9px; font-size:14px; font-weight:650; min-height:46px; }
   .actions .btnlink { flex:1; }
   #saveModal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:100; padding:12px; }
@@ -88,6 +92,10 @@
   <h1>俳句画像メーカー</h1>
   <p>細長い短冊に、縦書きの一句を配置してJPEG画像として保存できます。</p>
 </header>
+<div id="inappNote" hidden><div class="box">
+  Xなどのアプリ内ブラウザでは、画像の保存がブロックされることがあります。右上のメニュー（︙ や共有マーク）から「ブラウザで開く」を選び、SafariやChromeで開いてください。
+  <br><button class="secondary" id="copyUrl" type="button">このページのURLをコピー</button>
+</div></div>
 <main>
   <section class="panel" aria-label="設定">
     <div class="field">
@@ -156,7 +164,7 @@
       <button class="secondary" id="reset" type="button">設定をリセット</button>
     </div>
     <div class="hint">プレビューと同じ形・縦横比・配置でJPEG保存します（高解像度）。</div>
-    <div class="hint" id="ver">保存方式：Canvas直接描画 v3</div>
+    <div class="hint" id="ver">保存方式：Canvas直接描画 v4</div>
   </section>
 </main>
 <div id="saveModal" hidden role="dialog" aria-modal="true" aria-label="画像を保存">
@@ -356,6 +364,13 @@ async function ensureFonts(){
   });
   await Promise.race([Promise.all(jobs), new Promise(r=>setTimeout(r,4000))]);
 }
+const inApp = /Twitter|FBAN|FBAV|Instagram|Line\/|MicroMessenger|; wv\)/i.test(navigator.userAgent)
+  || (/iPhone|iPad/.test(navigator.userAgent) && !/Safari\//.test(navigator.userAgent));
+if(inApp) $('inappNote').hidden=false;
+$('copyUrl').addEventListener('click', async()=>{
+  try{ await navigator.clipboard.writeText(location.href); alert('URLをコピーしました。SafariやChromeに貼り付けて開いてください。'); }
+  catch(e){ prompt('このURLをコピーして、SafariやChromeで開いてください', location.href); }
+});
 let lastUrl=null, lastBlob=null;
 const isTouchDevice=()=>matchMedia('(pointer:coarse)').matches || /iPhone|iPad|Android/i.test(navigator.userAgent);
 function triggerDownload(url){
@@ -397,7 +412,9 @@ $('download').addEventListener('click', async()=>{
     lastUrl = URL.createObjectURL(blob);
     if(isTouchDevice()){
       // スマホ/アプリ内ブラウザでは a[download] が効かないことがあるため、画像を表示して長押し保存・共有できるようにする
-      $('resultImg').src = lastUrl;
+      let shown = lastUrl;
+      try{ shown = canvas.toDataURL('image/jpeg', 0.95); }catch(e){}
+      $('resultImg').src = shown;
       $('dlLink').href = lastUrl;
       $('saveModal').hidden = false;
     }else{
